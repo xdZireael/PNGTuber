@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Permissions-Policy" content="microphone=*">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PNGtuber Widget</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+
+        .pngtuber-container {
+            position: relative;
+            width: 300px;
+            height: 300px;
+        }
+
+        .character-image {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            transition: opacity 0.1s ease-in-out;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        .status {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .status.active {
+            background: rgba(76, 175, 80, 0.8);
+        }
+
+        .status.inactive {
+            background: rgba(244, 67, 54, 0.8);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="pngtuber-container" id="pngtuberContainer">
+        <img class="character-image" id="idleImage" alt="Idle character" style="opacity: 1;">
+        <img class="character-image" id="talkingImage" alt="Talking character" style="opacity: 0;">
+    </div>
+
+
+
+    <script>
+        let audioContext;
+        let analyser;
+        let microphone;
+        let dataArray;
+        let isInitialized = false;
+        let isTalking = false;
+        let sensitivity = 10;
+        let talkingTimeout;
+
+        // Image elements - Get them after DOM is loaded
+        const idleImg = document.getElementById('idleImage');
+        const talkingImg = document.getElementById('talkingImage');
+        const container = document.getElementById('pngtuberContainer');
+
+
+        // Fixed file URLs - properly formatted with quotes and correct syntax
+        const defaultIdleImage = './thinking.jpg';
+        const defaultTalkingImage = './hug.png';
+
+        // Set default images
+        idleImg.src = defaultIdleImage;
+        talkingImg.src = defaultTalkingImage;
+
+        // Auto-initialize when page loads
+        window.addEventListener('load', function () {
+            initializePNGtuber();
+        });
+
+        function updateStatus(message, isActive = false) {
+            status.textContent = message;
+            status.className = `status ${isActive ? 'active' : 'inactive'}`;
+        }
+
+        function updateImageSize(size) {
+            container.style.width = size + 'px';
+            container.style.height = size + 'px';
+        }
+
+        async function initializePNGtuber() {
+            try {
+                const imageSize = 300;
+
+                // Update size
+                updateImageSize(imageSize);
+
+                updateStatus('Requesting microphone access...', false);
+
+                // Request microphone access
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                });
+
+                // Create audio context and analyser
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                microphone = audioContext.createMediaStreamSource(stream);
+
+                // Configure analyser
+                analyser.fftSize = 256;
+                analyser.smoothingTimeConstant = 0.8;
+                microphone.connect(analyser);
+
+                // Create data array for frequency data
+                const bufferLength = analyser.frequencyBinCount;
+                dataArray = new Uint8Array(bufferLength);
+
+                isInitialized = true;
+                updateStatus('PNGtuber active - monitoring mic', true);
+
+                // Start monitoring
+                monitorAudio();
+
+            } catch (error) {
+                console.error('Error initializing PNGtuber:', error);
+                updateStatus('Error: ' + error.message, false);
+            }
+        }
+
+        function monitorAudio() {
+            if (!isInitialized) return;
+
+            // Get current audio data
+            analyser.getByteFrequencyData(dataArray);
+
+            // Calculate average volume
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                sum += dataArray[i];
+            }
+            const average = sum / dataArray.length;
+
+            // Check if talking based on sensitivity
+            const threshold = sensitivity;
+            const currentlyTalking = average > threshold;
+
+            if (currentlyTalking !== isTalking) {
+                isTalking = currentlyTalking;
+                switchImage(isTalking);
+            }
+
+            // If talking, reset the timeout
+            if (currentlyTalking) {
+                clearTimeout(talkingTimeout);
+                talkingTimeout = setTimeout(() => {
+                    if (isTalking) {
+                        isTalking = false;
+                        switchImage(false);
+                    }
+                }, 100); // Stop talking after 100ms of silence
+            }
+
+            // Continue monitoring
+            requestAnimationFrame(monitorAudio);
+        }
+
+        function switchImage(talking) {
+            if (talking) {
+                idleImg.style.opacity = '0';
+                talkingImg.style.opacity = '1';
+                updateStatus('PNGtuber active - TALKING', true);
+            } else {
+                idleImg.style.opacity = '1';
+                talkingImg.style.opacity = '0';
+                updateStatus('PNGtuber active - idle', true);
+            }
+        }
+
+        // Handle image loading errors
+        idleImg.onerror = function () {
+            console.warn('Idle image failed to load from:', this.src);
+            updateStatus('Error: Could not load idle image', false);
+        };
+
+        talkingImg.onerror = function () {
+            console.warn('Talking image failed to load from:', this.src);
+            updateStatus('Error: Could not load talking image', false);
+        };
+
+        // Log when images load successfully
+        idleImg.onload = function () {
+            console.log('Idle image loaded successfully:', this.src);
+        };
+
+        talkingImg.onload = function () {
+            console.log('Talking image loaded successfully:', this.src);
+        };
+
+    </script>
+</body>
+
+</html>
